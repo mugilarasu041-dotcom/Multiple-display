@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naruto Shadow Clone Jutsu - MediaPipe Hands</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #videoElement {
+            display: none;
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.3);
+            z-index: 1;
+            transition: transform 0.1s ease;
+        }
+
+        #overlayCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #cloneCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .clone-layer {
+            position: absolute;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 150, 255, 0.5);
+            transition: opacity 0.3s ease;
+        }
+
+        .clone-layer canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #status {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00d4ff;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.8);
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 25px;
+            border-radius: 25px;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        #status.visible {
+            opacity: 1;
+        }
+
+        #gestureIndicator {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 14px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 20px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        #flashOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        #chakraOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 45;
+            opacity: 0;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            z-index: 100;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 16px;
+            border-radius: 15px;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(var(--rotation)); }
+            50% { transform: translateY(-15px) rotate(var(--rotation)); }
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 150, 255, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(0, 150, 255, 0.9), 0 0 60px rgba(0, 100, 255, 0.4); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translate(-50%, -50%) translate(0, 0); }
+            10% { transform: translate(-50%, -50%) translate(-5px, 3px); }
+            20% { transform: translate(-50%, -50%) translate(5px, -3px); }
+            30% { transform: translate(-50%, -50%) translate(-3px, 5px); }
+            40% { transform: translate(-50%, -50%) translate(3px, -5px); }
+            50% { transform: translate(-50%, -50%) translate(-5px, -3px); }
+            60% { transform: translate(-50%, -50%) translate(5px, 3px); }
+            70% { transform: translate(-50%, -50%) translate(-3px, -5px); }
+            80% { transform: translate(-50%, -50%) translate(3px, 5px); }
+            90% { transform: translate(-50%, -50%) translate(-5px, 3px); }
+        }
+
+        .shaking {
+            animation: shake 0.5s ease-in-out;
+        }
+
+        @keyframes cloneAppear {
+            0% { transform: scale(0) rotate(180deg); opacity: 0; }
+            60% { transform: scale(1.1) rotate(-5deg); opacity: 0.9; }
+            100% { transform: scale(1) rotate(var(--rotation)); opacity: var(--opacity); }
+        }
+
+        @keyframes cloneDissolve {
+            0% { opacity: var(--opacity); transform: scale(1) rotate(var(--rotation)); filter: blur(0px); }
+            50% { opacity: 0.5; transform: scale(1.05) rotate(var(--rotation)); filter: blur(2px); }
+            100% { opacity: 0; transform: scale(0.5) rotate(var(--rotation)); filter: blur(10px); }
+        }
+
+        .clone-appearing {
+            animation: cloneAppear 0.4s ease-out forwards;
+        }
+
+        .clone-dissolving {
+            animation: cloneDissolve 0.8s ease-in forwards;
+        }
+
+        @keyframes smokeRise {
+            0% { transform: translateY(0) scale(1); opacity: 0.8; }
+            100% { transform: translateY(-100px) scale(2); opacity: 0; }
+        }
+
+        .smoke-particle {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(200,200,200,0.6) 0%, rgba(150,150,150,0.3) 50%, transparent 70%);
+            pointer-events: none;
+            z-index: 42;
+            animation: smokeRise 1.5s ease-out forwards;
+        }
+
+        @keyframes chakraWave {
+            0% { transform: scale(0); opacity: 0.8; border-width: 4px; }
+            100% { transform: scale(3); opacity: 0; border-width: 1px; }
+        }
+
+        .chakra-wave {
+            position: absolute;
+            border: 3px solid rgba(0, 150, 255, 0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 43;
+            animation: chakraWave 1s ease-out forwards;
+        }
+
+        @keyframes windStreak {
+            0% { transform: translateX(-100vw); opacity: 0; }
+            20% { opacity: 0.6; }
+            80% { opacity: 0.6; }
+            100% { transform: translateX(100vw); opacity: 0; }
+        }
+
+        .wind-streak {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(100, 200, 255, 0.8), transparent);
+            pointer-events: none;
+            z-index: 41;
+            animation: windStreak 0.8s linear forwards;
+        }
+
+        @keyframes energySpark {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+        }
+
+        .energy-spark {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #00d4ff;
+            border-radius: 50%;
+            box-shadow: 0 0 6px #00d4ff, 0 0 12px rgba(0, 212, 255, 0.5);
+            pointer-events: none;
+            z-index: 44;
+            animation: energySpark 0.6s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvasElement"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+        <canvas id="cloneCanvas"></canvas>
+        <div id="flashOverlay"></div>
+        <div id="chakraOverlay"></div>
+        <div id="status"></div>
+        <div id="gestureIndicator">🖐️ Show hands to camera</div>
+        <div id="instructions">Cross your index & middle fingers to perform Shadow Clone Jutsu!</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        // ============================================
+        // EXISTING PROJECT - ALL FEATURES PRESERVED
+        // ============================================
+
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const canvasCtx = canvasElement.getContext('2d');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const overlayCtx = overlayCanvas.getContext('2d');
+        const cloneCanvas = document.getElementById('cloneCanvas');
+        const cloneCtx = cloneCanvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const gestureIndicator = document.getElementById('gestureIndicator');
+        const flashOverlay = document.getElementById('flashOverlay');
+        const chakraOverlay = document.getElementById('chakraOverlay');
+        const container = document.getElementById('container');
+
+        // Set canvas sizes
+        function resizeCanvases() {
+            const w = Math.min(window.innerWidth * 0.7, 640);
+            const h = Math.min(window.innerHeight * 0.8, 480);
+            canvasElement.width = w;
+            canvasElement.height = h;
+            overlayCanvas.width = window.innerWidth;
+            overlayCanvas.height = window.innerHeight;
+            cloneCanvas.width = window.innerWidth;
+            cloneCanvas.height = window.innerHeight;
+        }
+        resizeCanvases();
+        window.addEventListener('resize', resizeCanvases);
+
+        // State variables
+        let handsResults = null;
+        let currentGesture = 'none';
+        let narutoEffectActive = false;
+        let sasukeEffectActive = false;
+        let narutoFadeOpacity = 0;
+        let sasukeFadeOpacity = 0;
+        let shadowCloneActive = false;
+        let shadowCloneCooldown = false;
+        let clones = [];
+        let particles = [];
+        let animationFrameId = null;
+        let gestureHoldFrames = 0;
+        let lastGesture = 'none';
+        let smoothHandPositions = [];
+        const SMOOTHING_FACTOR = 0.3;
+
+        // ============================================
+        // MEDIAPIPE HANDS SETUP
+        // ============================================
+
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        // Camera setup
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+
+        // ============================================
+        // HAND RESULTS PROCESSING
+        // ============================================
+
+        function onResults(results) {
+            handsResults = results;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // Draw video frame
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+                    const handedness = results.multiHandedness[i].label;
+
+                    // Smooth tracking
+                    if (!smoothHandPositions[i]) {
+                        smoothHandPositions[i] = JSON.parse(JSON.stringify(landmarks));
+                    } else {
+                        for (let j = 0; j < landmarks.length; j++) {
+                            smoothHandPositions[i][j].x += SMOOTHING_FACTOR * (landmarks[j].x - smoothHandPositions[i][j].x);
+                            smoothHandPositions[i][j].y += SMOOTHING_FACTOR * (landmarks[j].y - smoothHandPositions[i][j].y);
+                            smoothHandPositions[i][j].z += SMOOTHING_FACTOR * (landmarks[j].z - smoothHandPositions[i][j].z);
+                        }
+                    }
+
+                    // Draw blue glowing hand skeleton
+                    drawBlueGlowingSkeleton(smoothHandPositions[i]);
+
+                    // Detect gestures
+                    const gesture = detectGesture(smoothHandPositions[i], handedness);
+
+                    // Apply hand-specific effects
+                    if (handedness === 'Left') {
+                        applyNarutoEffect(smoothHandPositions[i], gesture);
+                    } else if (handedness === 'Right') {
+                        applySasukeEffect(smoothHandPositions[i], gesture);
+                    }
+
+                    currentGesture = gesture;
+                }
+
+                gestureIndicator.textContent = `✋ Gesture: ${currentGesture} | Hands: ${results.multiHandLandmarks.length}`;
+            } else {
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+                gestureIndicator.textContent = '🖐️ Show hands to camera';
+                currentGesture = 'none';
+                gestureHoldFrames = 0;
+
+                // Fade out effects
+                if (narutoFadeOpacity > 0) narutoFadeOpacity -= 0.05;
+                if (sasukeFadeOpacity > 0) sasukeFadeOpacity -= 0.05;
+            }
+
+            canvasCtx.restore();
+
+            // Check for Shadow Clone Jutsu gesture
+            checkShadowCloneGesture();
+
+            // Render overlay effects
+            renderOverlayEffects();
+        }
+
+        // ============================================
+        // BLUE GLOWING SKELETON
+        // ============================================
+
+        function drawBlueGlowingSkeleton(landmarks) {
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4],
+                [0, 5], [5, 6], [6, 7], [7, 8],
+                [5, 9], [9, 10], [10, 11], [11, 12],
+                [9, 13], [13, 14], [14, 15], [15, 16],
+                [13, 17], [17, 18], [18, 19], [19, 20],
+                [0, 17]
+            ];
+
+            const w = canvasElement.width;
+            const h = canvasElement.height;
+
+            // Glow effect
+            canvasCtx.shadowColor = '#00aaff';
+            canvasCtx.shadowBlur = 15;
+            canvasCtx.strokeStyle = '#00d4ff';
+            canvasCtx.lineWidth = 3;
+            canvasCtx.lineCap = 'round';
+
+            connections.forEach(([start, end]) => {
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(landmarks[start].x * w, landmarks[start].y * h);
+                canvasCtx.lineTo(landmarks[end].x * w, landmarks[end].y * h);
+                canvasCtx.stroke();
+            });
+
+            // Draw joints
+            canvasCtx.shadowBlur = 10;
+            canvasCtx.fillStyle = '#00ffff';
+            landmarks.forEach((lm) => {
+                canvasCtx.beginPath();
+                canvasCtx.arc(lm.x * w, lm.y * h, 4, 0, 2 * Math.PI);
+                canvasCtx.fill();
+            });
+
+            canvasCtx.shadowBlur = 0;
+        }
+
+        // ============================================
+        // GESTURE DETECTION
+        // ============================================
+
+        function detectGesture(landmarks, handedness) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+            const wrist = landmarks[0];
+            const indexMCP = landmarks[5];
+            const middleMCP = landmarks[9];
+            const ringMCP = landmarks[13];
+            const pinkyMCP = landmarks[17];
+
+            // Check if fingers are extended
+            const indexExtended = indexTip.y < landmarks[6].y;
+            const middleExtended = middleTip.y < landmarks[10].y;
+            const ringExtended = ringTip.y < landmarks[14].y;
+            const pinkyExtended = pinkyTip.y < landmarks[18].y;
+            const thumbExtended = thumbTip.x < landmarks[3].x;
+
+            // Peace sign (V sign)
+            if (indexExtended && middleExtended && !ringExtended && !pinkyExtended) {
+                return 'peace';
+            }
+
+            // Fist
+            if (!indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+                return 'fist';
+            }
+
+            // Open palm
+            if (indexExtended && middleExtended && ringExtended && pinkyExtended) {
+                return 'open';
+            }
+
+            // Pointing
+            if (indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+                return 'point';
+            }
+
+            // Thumbs up
+            if (thumbExtended && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended) {
+                return 'thumbsup';
+            }
+
+            return 'none';
+        }
+
+        // ============================================
+        // NARUTO EFFECT (Left Hand)
+        // ============================================
+
+        function applyNarutoEffect(landmarks, gesture) {
+            narutoFadeOpacity = Math.min(1, narutoFadeOpacity + 0.08);
+
+            const w = canvasElement.width;
+            const h = canvasElement.height;
+            const palmX = landmarks[0].x * w;
+            const palmY = landmarks[0].y * h;
+
+            overlayCtx.save();
+            overlayCtx.globalAlpha = narutoFadeOpacity * 0.6;
+
+            // Orange chakra aura
+            const gradient = overlayCtx.createRadialGradient(palmX, palmY, 0, palmX, palmY, 80);
+            gradient.addColorStop(0, 'rgba(255, 140, 0, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.3)');
+            gradient.addColorStop(1, 'rgba(255, 60, 0, 0)');
+
+            overlayCtx.fillStyle = gradient;
+            overlayCtx.beginPath();
+            overlayCtx.arc(palmX, palmY, 80, 0, Math.PI * 2);
+            overlayCtx.fill();
+
+            // Spiral effect
+            overlayCtx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+            overlayCtx.lineWidth = 2;
+            overlayCtx.beginPath();
+            for (let angle = 0; angle < Math.PI * 4; angle += 0.1) {
+                const radius = angle * 5;
+                const x = palmX + Math.cos(angle + Date.now() * 0.003) * radius;
+                const y = palmY + Math.sin(angle + Date.now() * 0.003) * radius;
+                if (angle === 0) overlayCtx.moveTo(x, y);
+                else overlayCtx.lineTo(x, y);
+            }
+            overlayCtx.stroke();
+
+            overlayCtx.restore();
+        }
+
+        // ============================================
+        // SASUKE EFFECT (Right Hand)
+        // ============================================
+
+        function applySasukeEffect(landmarks, gesture) {
+            sasukeFadeOpacity = Math.min(1, sasukeFadeOpacity + 0.08);
+
+            const w = canvasElement.width;
+            const h = canvasElement.height;
+            const palmX = landmarks[0].x * w;
+            const palmY = landmarks[0].y * h;
+
+            overlayCtx.save();
+            overlayCtx.globalAlpha = sasukeFadeOpacity * 0.6;
+
+            // Purple chakra aura
+            const gradient = overlayCtx.createRadialGradient(palmX, palmY, 0, palmX, palmY, 80);
+            gradient.addColorStop(0, 'rgba(128, 0, 255, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(100, 0, 200, 0.3)');
+            gradient.addColorStop(1, 'rgba(80, 0, 150, 0)');
+
+            overlayCtx.fillStyle = gradient;
+            overlayCtx.beginPath();
+            overlayCtx.arc(palmX, palmY, 80, 0, Math.PI * 2);
+            overlayCtx.fill();
+
+            // Lightning effect
+            overlayCtx.strokeStyle = 'rgba(180, 100, 255, 0.7)';
+            overlayCtx.lineWidth = 1.5;
+            overlayCtx.beginPath();
+            let lx = palmX, ly = palmY;
+            overlayCtx.moveTo(lx, ly);
+            for (let i = 0; i < 8; i++) {
+                lx += (Math.random() - 0.5) * 40;
+                ly += (Math.random() - 0.5) * 40;
+                overlayCtx.lineTo(lx, ly);
+            }
+            overlayCtx.stroke();
+
+            overlayCtx.restore();
+        }
+
+        // ============================================
+        // SHADOW CLONE JUTSU - NEW FEATURE
+        // ============================================
+
+        function checkShadowCloneGesture() {
+            if (!handsResults || !handsResults.multiHandLandmarks || handsResults.multiHandLandmarks.length === 0) {
+                gestureHoldFrames = 0;
+                lastGesture = 'none';
+                return;
+            }
+
+            // Check for cross-finger gesture (Shadow Clone hand sign)
+            let crossFingerDetected = false;
+
+            for (let i = 0; i < handsResults.multiHandLandmarks.length; i++) {
+                const landmarks = handsResults.multiHandLandmarks[i];
+
+                const indexTip = landmarks[8];
+                const middleTip = landmarks[12];
+                const indexPIP = landmarks[7];
+                const middlePIP = landmarks[11];
+                const indexMCP = landmarks[5];
+                const middleMCP = landmarks[9];
+                const ringTip = landmarks[16];
+                const pinkyTip = landmarks[20];
+                const thumbTip = landmarks[4];
+
+                // Check if index and middle fingers are crossed
+                // Distance between index tip and middle tip should be small
+                const tipDistance = Math.sqrt(
+                    Math.pow(indexTip.x - middleTip.x, 2) +
+                    Math.pow(indexTip.y - middleTip.y, 2)
+                );
+
+                // Check if fingers are extended
+                const indexExtended = indexTip.y < indexPIP.y;
+                const middleExtended = middleTip.y < middlePIP.y;
+
+                // Check crossing: index tip should be close to middle finger's line
+                // and middle tip should be close to index finger's line
+                const crossDist1 = Math.sqrt(
+                    Math.pow(indexTip.x - middleMCP.x, 2) +
+                    Math.pow(indexTip.y - middleMCP.y, 2)
+                );
+                const crossDist2 = Math.sqrt(
+                    Math.pow(middleTip.x - indexMCP.x, 2) +
+                    Math.pow(middleTip.y - indexMCP.y, 2)
+                );
+
+                // Cross-finger detection: tips are close together, fingers extended,
+                // and tips are on opposite sides
+                if (tipDistance < 0.08 && indexExtended && middleExtended) {
+                    // Additional check: fingers should be crossing
+                    // The index tip x should be on the "other side" relative to middle finger
+                    const indexCrossesMiddle = (indexTip.x - middleMCP.x) * (middleTip.x - middleMCP.x) < 0;
+                    const middleCrossesIndex = (middleTip.x - indexMCP.x) * (indexTip.x - indexMCP.x) < 0;
+
+                    if (indexCrossesMiddle || middleCrossesIndex || tipDistance < 0.05) {
+                        crossFingerDetected = true;
+                        break;
+                    }
+                }
+            }
+
+            // Also check for both hands making fists close together (alternative gesture)
+            let bothFistsClose = false;
+            if (handsResults.multiHandLandmarks.length === 2) {
+                const leftWrist = handsResults.multiHandLandmarks[0][0];
+                const rightWrist = handsResults.multiHandLandmarks[1][0];
+                const wristDist = Math.sqrt(
+                    Math.pow(leftWrist.x - rightWrist.x, 2) +
+                    Math.pow(leftWrist.y - rightWrist.y, 2)
+                );
+
+                const leftGesture = detectGesture(handsResults.multiHandLandmarks[0], 'Left');
+                const rightGesture = detectGesture(handsResults.multiHandLandmarks[1], 'Right');
+
+                if (wristDist < 0.15 && (leftGesture === 'fist' || rightGesture === 'fist')) {
+                    bothFistsClose = true;
+                }
+            }
+
+            if (crossFingerDetected || bothFistsClose) {
+                if (lastGesture === 'cross-finger' || lastGesture === 'both-fists') {
+                    gestureHoldFrames++;
+                } else {
+                    gestureHoldFrames = 1;
+                }
+                lastGesture = crossFingerDetected ? 'cross-finger' : 'both-fists';
+
+                // Require holding gesture for ~15 frames (about 0.5 seconds)
+                if (gestureHoldFrames >= 15 && !shadowCloneActive && !shadowCloneCooldown) {
+                    activateShadowCloneJutsu();
+                }
+            } else {
+                gestureHoldFrames = Math.max(0, gestureHoldFrames - 2);
+                lastGesture = 'none';
+            }
+        }
+
+        function activateShadowCloneJutsu() {
+            shadowCloneActive = true;
+            shadowCloneCooldown = true;
+
+            // Show status
+            statusDiv.textContent = '🍥 SHADOW CLONE JUTSU! 🍥';
+            statusDiv.classList.add('visible');
+
+            // Start activation sequence
+            playActivationSequence();
+        }
+
+        function playActivationSequence() {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+
+            // Step 1: White flash
+            flashOverlay.style.transition = 'opacity 0.1s ease';
+            flashOverlay.style.opacity = '1';
+
+            setTimeout(() => {
+                flashOverlay.style.transition = 'opacity 0.5s ease';
+                flashOverlay.style.opacity = '0';
+            }, 150);
+
+            // Step 2: Camera shake
+            setTimeout(() => {
+                canvasElement.classList.add('shaking');
+                setTimeout(() => canvasElement.classList.remove('shaking'), 500);
+            }, 100);
+
+            // Step 3: Blue chakra explosion
+            setTimeout(() => {
+                createChakraExplosion(centerX, centerY);
+            }, 200);
+
+            // Step 4: Smoke burst
+            setTimeout(() => {
+                createSmokeBurst(centerX, centerY);
+            }, 300);
+
+            // Step 5: Wind particles
+            setTimeout(() => {
+                createWindParticles();
+            }, 400);
+
+            // Step 6: Energy sparks
+            setTimeout(() => {
+                createEnergySparks(centerX, centerY);
+            }, 250);
+
+            // Step 7: Chakra waves
+            setTimeout(() => {
+                createChakraWaves(centerX, centerY);
+            }, 350);
+
+            // Step 8: Create clones with staggered appearance
+            setTimeout(() => {
+                createClones();
+            }, 600);
+
+            // Auto-deactivate after 5 seconds
+            setTimeout(() => {
+                deactivateShadowCloneJutsu();
+            }, 5000);
+
+            // Reset cooldown
+            setTimeout(() => {
+                shadowCloneCooldown = false;
+            }, 6000);
+        }
+
+        function createChakraExplosion(x, y) {
+            const numParticles = 50;
+            for (let i = 0; i < numParticles; i++) {
+                const angle = (Math.PI * 2 / numParticles) * i;
+                const speed = 3 + Math.random() * 5;
+                const size = 3 + Math.random() * 8;
+                const duration = 500 + Math.random() * 500;
+
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                particle.style.background = `radial-gradient(circle, rgba(0, 200, 255, 0.9), rgba(0, 100, 255, 0.5), transparent)`;
+                particle.style.boxShadow = `0 0 ${size}px rgba(0, 200, 255, 0.8)`;
+                particle.style.setProperty('--dx', `${Math.cos(angle) * speed * 30}px`);
+                particle.style.setProperty('--dy', `${Math.sin(angle) * speed * 30}px`);
+                particle.style.animation = `energySpark ${duration}ms ease-out forwards`;
+                particle.style.zIndex = '44';
+
+                document.body.appendChild(particle);
+
+                // Animate
+                let startTime = performance.now();
+                function animateParticle(currentTime) {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const currentX = x + Math.cos(angle) * speed * 30 * progress;
+                    const currentY = y + Math.sin(angle) * speed * 30 * progress;
+                    particle.style.left = currentX + 'px';
+                    particle.style.top = currentY + 'px';
+                    particle.style.opacity = 1 - progress;
+                    particle.style.transform = `scale(${1 - progress * 0.5})`;
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animateParticle);
+                    } else {
+                        particle.remove();
+                    }
+                }
+                requestAnimationFrame(animateParticle);
+            }
+        }
+
+        function createSmokeBurst(x, y) {
+            const numSmoke = 20;
+            for (let i = 0; i < numSmoke; i++) {
+                const smoke = document.createElement('div');
+                smoke.className = 'smoke-particle';
+                const size = 30 + Math.random() * 60;
+                smoke.style.width = size + 'px';
+                smoke.style.height = size + 'px';
+                smoke.style.left = (x - size / 2 + (Math.random() - 0.5) * 100) + 'px';
+                smoke.style.top = (y - size / 2 + (Math.random() - 0.5) * 100) + 'px';
+                smoke.style.animationDelay = `${Math.random() * 0.3}s`;
+                smoke.style.animationDuration = `${1 + Math.random()}s`;
+
+                document.body.appendChild(smoke);
+
+                setTimeout(() => smoke.remove(), 2000);
+            }
+        }
+
+        function createWindParticles() {
+            const numStreaks = 15;
+            for (let i = 0; i < numStreaks; i++) {
+                const streak = document.createElement('div');
+                streak.className = 'wind-streak';
+                streak.style.width = `${100 + Math.random() * 200}px`;
+                streak.style.top = `${Math.random() * window.innerHeight}px`;
+                streak.style.animationDelay = `${Math.random() * 0.5}s`;
+                streak.style.animationDuration = `${0.5 + Math.random() * 0.5}s`;
+
+                document.body.appendChild(streak);
+
+                setTimeout(() => streak.remove(), 1500);
+            }
+        }
+
+        function createEnergySparks(x, y) {
+            const numSparks = 30;
+            for (let i = 0; i < numSparks; i++) {
+                const spark = document.createElement('div');
+                spark.className = 'energy-spark';
+                spark.style.left = x + 'px';
+                spark.style.top = y + 'px';
+                spark.style.setProperty('--dx', `${(Math.random() - 0.5) * 400}px`);
+                spark.style.setProperty('--dy', `${(Math.random() - 0.5) * 400}px`);
+                spark.style.animationDelay = `${Math.random() * 0.2}s`;
+
+                document.body.appendChild(spark);
+
+                setTimeout(() => spark.remove(), 1000);
+            }
+        }
+
+        function createChakraWaves(x, y) {
+            const numWaves = 4;
+            for (let i = 0; i < numWaves; i++) {
+                const wave = document.createElement('div');
+                wave.className = 'chakra-wave';
+                const size = 100;
+                wave.style.width = size + 'px';
+                wave.style.height = size + 'px';
+                wave.style.left = (x - size / 2) + 'px';
+                wave.style.top = (y - size / 2) + 'px';
+                wave.style.animationDelay = `${i * 0.15}s`;
+
+                document.body.appendChild(wave);
+
+                setTimeout(() => wave.remove(), 1500);
+            }
+        }
+
+        function createClones() {
+            const numClones = 12 + Math.floor(Math.random() * 6); // 12-17 clones
+            const videoW = canvasElement.width;
+            const videoH = canvasElement.height;
+
+            for (let i = 0; i < numClones; i++) {
+                const clone = document.createElement('div');
+                clone.className = 'clone-layer clone-appearing';
+
+                const scale = 0.3 + Math.random() * 0.5;
+                const opacity = 0.4 + Math.random() * 0.5;
+                const rotation = (Math.random() - 0.5) * 20;
+                const floatDuration = 2 + Math.random() * 3;
+                const floatDelay = Math.random() * 2;
+
+                // Position clones across the screen
+                let posX, posY;
+                const side = Math.floor(Math.random() * 5); // 0=left, 1=right, 2=top, 3=bottom, 4=center-area
+
+                switch (side) {
+                    case 0: // Left
+                        posX = Math.random() * (window.innerWidth * 0.3);
+                        posY = Math.random() * window.innerHeight;
+                        break;
+                    case 1: // Right
+                        posX = window.innerWidth * 0.7 + Math.random() * (window.innerWidth * 0.3);
+                        posY = Math.random() * window.innerHeight;
+                        break;
+                    case 2: // Top
+                        posX = Math.random() * window.innerWidth;
+                        posY = Math.random() * (window.innerHeight * 0.3);
+                        break;
+                    case 3: // Bottom
+                        posX = Math.random() * window.innerWidth;
+                        posY = window.innerHeight * 0.7 + Math.random() * (window.innerHeight * 0.3);
+                        break;
+                    case 4: // Center area (but not too close to main)
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = 200 + Math.random() * 200;
+                        posX = window.innerWidth / 2 + Math.cos(angle) * dist;
+                        posY = window.innerHeight / 2 + Math.sin(angle) * dist;
+                        break;
+                }
+
+                const cloneW = videoW * scale;
+                const cloneH = videoH * scale;
+
+                clone.style.width = cloneW + 'px';
+                clone.style.height = cloneH + 'px';
+                clone.style.left = (posX - cloneW / 2) + 'px';
+                clone.style.top = (posY - cloneH / 2) + 'px';
+                clone.style.setProperty('--rotation', `${rotation}deg`);
+                clone.style.setProperty('--opacity', opacity);
+                clone.style.opacity = '0';
+                clone.style.animationDelay = `${i * 0.08}s`;
+                clone.style.animation = `cloneAppear 0.4s ease-out ${i * 0.08}s forwards, float ${floatDuration}s ease-in-out ${floatDelay}s infinite`;
+                clone.style.filter = `drop-shadow(0 5px 15px rgba(0, 100, 255, 0.4))`;
+
+                // Create canvas for live clone
+                const cloneCanvasEl = document.createElement('canvas');
+                cloneCanvasEl.width = videoW;
+                cloneCanvasEl.height = videoH;
+                cloneCanvasEl.style.width = '100%';
+                cloneCanvasEl.style.height = '100%';
+                clone.appendChild(cloneCanvasEl);
+
+                document.body.appendChild(clone);
+
+                clones.push({
+                    element: clone,
+                    canvas: cloneCanvasEl,
+                    ctx: cloneCanvasEl.getContext('2d'),
+                    scale: scale,
+                    opacity: opacity,
+                    rotation: rotation,
+                    baseX: posX - cloneW / 2,
+                    baseY: posY - cloneH / 2,
+                    floatOffset: Math.random() * Math.PI * 2,
+                    floatSpeed: 0.5 + Math.random() * 1,
+                    floatAmplitude: 5 + Math.random() * 10
+                });
+            }
+
+            // Start rendering live clones
+            startCloneRendering();
+        }
+
+        function startCloneRendering() {
+            function renderClones() {
+                if (!shadowCloneActive) return;
+
+                const time = Date.now() * 0.001;
+
+                clones.forEach((clone) => {
+                    // Draw live video frame
+                    if (handsResults && handsResults.image) {
+                        clone.ctx.clearRect(0, 0, clone.canvas.width, clone.canvas.height);
+                        clone.ctx.drawImage(handsResults.image, 0, 0, clone.canvas.width, clone.canvas.height);
+
+                        // Add blue chakra tint
+                        clone.ctx.fillStyle = 'rgba(0, 100, 255, 0.1)';
+                        clone.ctx.fillRect(0, 0, clone.canvas.width, clone.canvas.height);
+
+                        // Add glow border
+                        clone.ctx.strokeStyle = 'rgba(0, 180, 255, 0.5)';
+                        clone.ctx.lineWidth = 3;
+                        clone.ctx.shadowColor = '#00aaff';
+                        clone.ctx.shadowBlur = 10;
+                        clone.ctx.strokeRect(0, 0, clone.canvas.width, clone.canvas.height);
+                        clone.ctx.shadowBlur = 0;
+                    }
+
+                    // Update floating position
+                    const floatY = Math.sin(time * clone.floatSpeed + clone.floatOffset) * clone.floatAmplitude;
+                    const floatX = Math.cos(time * clone.floatSpeed * 0.7 + clone.floatOffset) * clone.floatAmplitude * 0.5;
+
+                    clone.element.style.left = (clone.baseX + floatX) + 'px';
+                    clone.element.style.top = (clone.baseY + floatY) + 'px';
+                });
+
+                requestAnimationFrame(renderClones);
+            }
+
+            requestAnimationFrame(renderClones);
+        }
+
+        function deactivateShadowCloneJutsu() {
+            shadowCloneActive = false;
+
+            // Dissolve clones
+            clones.forEach((clone, index) => {
+                setTimeout(() => {
+                    clone.element.classList.remove('clone-appearing');
+                    clone.element.classList.add('clone-dissolving');
+                    clone.element.style.setProperty('--opacity', clone.opacity);
+                    clone.element.style.setProperty('--rotation', `${clone.rotation}deg`);
+                }, index * 50);
+            });
+
+            // Create dissolution smoke
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            setTimeout(() => {
+                createSmokeBurst(centerX, centerY);
+            }, 300);
+
+            // Remove clones after animation
+            setTimeout(() => {
+                clones.forEach(clone => {
+                    clone.element.remove();
+                });
+                clones = [];
+            }, 1500);
+
+            // Hide status
+            setTimeout(() => {
+                statusDiv.classList.remove('visible');
+            }, 1000);
+
+            // Fade out chakra particles
+            const allParticles = document.querySelectorAll('.particle, .energy-spark, .chakra-wave, .wind-streak, .smoke-particle');
+            allParticles.forEach(p => {
+                p.style.transition = 'opacity 0.5s ease';
+                p.style.opacity = '0';
+                setTimeout(() => p.remove(), 600);
+            });
+        }
+
+        // ============================================
+        // OVERLAY EFFECTS RENDERING
+        // ============================================
+
+        function renderOverlayEffects() {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+            // Continuous chakra particles when shadow clone is active
+            if (shadowCloneActive) {
+                renderActiveChakraParticles();
+            }
+        }
+
+        function renderActiveChakraParticles() {
+            const time = Date.now() * 0.001;
+
+            // Add new particles
+            if (Math.random() < 0.3) {
+                particles.push({
+                    x: Math.random() * overlayCanvas.width,
+                    y: overlayCanvas.height + 10,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: -1 - Math.random() * 3,
+                    size: 2 + Math.random() * 4,
+                    life: 1,
+                    decay: 0.005 + Math.random() * 0.01,
+                    color: Math.random() > 0.5 ? '0, 180, 255' : '100, 200, 255'
+                });
+            }
+
+            // Update and draw particles
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => {
+                p.x += p.vx + Math.sin(time * 2 + p.y * 0.01) * 0.5;
+                p.y += p.vy;
+                p.life -= p.decay;
+
+                overlayCtx.save();
+                overlayCtx.globalAlpha = p.life * 0.8;
+                overlayCtx.fillStyle = `rgba(${p.color}, ${p.life})`;
+                overlayCtx.shadowColor = `rgba(${p.color}, 0.8)`;
+                overlayCtx.shadowBlur = p.size * 2;
+                overlayCtx.beginPath();
+                overlayCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                overlayCtx.fill();
+                overlayCtx.restore();
+            });
+
+            // Limit particles
+            if (particles.length > 200) {
+                particles = particles.slice(-150);
+            }
+        }
+
+        // ============================================
+        // MAIN ANIMATION LOOP
+        // ============================================
+
+        function animate() {
+            // Smooth fade out for effects when no hands
+            if (!handsResults || !handsResults.multiHandLandmarks || handsResults.multiHandLandmarks.length === 0) {
+                if (narutoFadeOpacity > 0) {
+                    narutoFadeOpacity = Math.max(0, narutoFadeOpacity - 0.05);
+                }
+                if (sasukeFadeOpacity > 0) {
+                    sasukeFadeOpacity = Math.max(0, sasukeFadeOpacity - 0.05);
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // Start animation loop
+        animate();
+
+        // ============================================
+        // KEYBOARD SHORTCUT (for testing)
+        // ============================================
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === ' ' && !shadowCloneActive && !shadowCloneCooldown) {
+                e.preventDefault();
+                activateShadowCloneJutsu();
+            }
+        });
+
+        // ============================================
+        // CLEANUP
+        // ============================================
+
+        window.addEventListener('beforeunload', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            clones.forEach(clone => clone.element.remove());
+            particles = [];
+        });
+    </script>
+</body>
+</html>
